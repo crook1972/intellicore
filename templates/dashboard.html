@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>IntelliCore MVP</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; background: #0b1020; color: #e8eefc; }
+      .card { background: #151d33; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #2b3557; }
+      input, button { padding: 0.6rem; border-radius: 6px; border: none; }
+      button { background: #4f7cff; color: white; cursor: pointer; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      .message { color: #9fe870; margin-top: 0.5rem; }
+      .muted { color: #9aa8d6; }
+    </style>
+  </head>
+  <body>
+    <h1>IntelliCore MVP</h1>
+    <p class="muted">BACnet/IP-first discovery appliance with local dashboard.</p>
+
+    <div class="card">
+      <form method="post" action="/scan">
+        <label>Target BACnet IP/CIDR</label>
+        <input type="text" name="target_ip" value="{{ config.bacnet_ip }}" style="width: 260px; margin: 0 0.5rem;" />
+        <button type="submit">Run BACnet Scan</button>
+      </form>
+      {% if message %}<div class="message">{{ message }}</div>{% endif %}
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Discovered Devices</h2>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Address</th><th>Vendor</th><th>Model</th></tr>
+          </thead>
+          <tbody>
+            {% for device in devices %}
+            <tr>
+              <td>{{ device.name }}</td>
+              <td>{{ device.address }}</td>
+              <td>{{ device.vendor or '-' }}</td>
+              <td>{{ device.model_name or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">No devices yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Live Point Values</h2>
+        <table>
+          <thead>
+            <tr><th>Point</th><th>Type</th><th>Value</th><th>Units</th></tr>
+          </thead>
+          <tbody>
+            {% for point in points %}
+            <tr>
+              <td>{{ point.object_name }}</td>
+              <td>{{ point.object_type }}</td>
+              <td>{{ point.present_value or '-' }}</td>
+              <td>{{ point.units or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">No points yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </body>
+</html>

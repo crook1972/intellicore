@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}IntelliCore - Dashboard{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <h1>BACnet Device Discovery</h1>
+
+    <div class="scan-controls">
+        <label for="target">Target Network:</label>
+        <input type="text" id="target" value="192.168.1.0/24" placeholder="e.g. 192.168.1.0/24">
+        <button id="scan-btn" onclick="startScan()">Scan Network</button>
+    </div>
+
+    <div id="scan-status" class="status-box" style="display:none;"></div>
+</section>
+
+<section class="panel">
+    <h2>Discovered Devices ({{ devices|length }})</h2>
+    {% if devices %}
+    <table>
+        <thead>
+            <tr>
+                <th>Instance</th>
+                <th>Name</th>
+                <th>Address</th>
+                <th>Vendor</th>
+                <th>Model</th>
+                <th>Last Seen</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in devices %}
+            <tr>
+                <td>{{ d.device_instance }}</td>
+                <td>{{ d.name }}</td>
+                <td>{{ d.address }}</td>
+                <td>{{ d.vendor or '-' }}</td>
+                <td>{{ d.model_name or '-' }}</td>
+                <td>{{ d.last_seen.strftime('%Y-%m-%d %H:%M') if d.last_seen else '-' }}</td>
+                <td><a href="/device/{{ d.id }}">View Points</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No devices discovered yet. Run a scan to get started.</p>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function startScan() {
+    const btn = document.getElementById('scan-btn');
+    const status = document.getElementById('scan-status');
+    const target = document.getElementById('target').value;
+
+    btn.disabled = true;
+    btn.textContent = 'Scanning...';
+    status.style.display = 'block';
+    status.textContent = 'Discovery in progress...';
+    status.className = 'status-box info';
+
+    try {
+        const resp = await fetch('/api/scan?target=' + encodeURIComponent(target), {method: 'POST'});
+        const data = await resp.json();
+        if (data.status === 'complete') {
+            status.textContent = `Done: ${data.devices_found} device(s), ${data.points_read} point(s) read.`;
+            status.className = 'status-box success';
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            status.textContent = 'Error: ' + (data.error || 'Unknown error');
+            status.className = 'status-box error';
+        }
+    } catch (e) {
+        status.textContent = 'Request failed: ' + e.message;
+        status.className = 'status-box error';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Scan Network';
+}
+</script>
+{% endblock %}
