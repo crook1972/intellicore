@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}IntelliCore - {{ device.name if device else 'Device' }}{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <a href="/">&larr; Back to Dashboard</a>
+
+    {% if device %}
+    <h1>{{ device.name }}</h1>
+    <table class="info-table">
+        <tr><th>Device Instance</th><td>{{ device.device_instance }}</td></tr>
+        <tr><th>Address</th><td>{{ device.address }}</td></tr>
+        <tr><th>Vendor</th><td>{{ device.vendor or '-' }}</td></tr>
+        <tr><th>Model</th><td>{{ device.model_name or '-' }}</td></tr>
+        <tr><th>Protocol</th><td>{{ device.protocol }}</td></tr>
+        <tr><th>Last Seen</th><td>{{ device.last_seen.strftime('%Y-%m-%d %H:%M:%S') if device.last_seen else '-' }}</td></tr>
+    </table>
+    {% else %}
+    <h1>Device Not Found</h1>
+    {% endif %}
+</section>
+
+{% if points %}
+<section class="panel">
+    <h2>Points ({{ points|length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Identifier</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Present Value</th>
+                <th>Units</th>
+                <th>Last Sampled</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in points %}
+            <tr>
+                <td><code>{{ p.object_identifier }}</code></td>
+                <td>{{ p.object_name }}</td>
+                <td>{{ p.object_type }}</td>
+                <td class="value">{{ p.present_value or '-' }}</td>
+                <td>{{ p.units or '-' }}</td>
+                <td>{{ p.last_sampled.strftime('%Y-%m-%d %H:%M:%S') if p.last_sampled else '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% elif device %}
+<section class="panel">
+    <p class="empty">No points read for this device yet.</p>
+</section>
+{% endif %}
+{% endblock %}
