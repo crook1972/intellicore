@@ -3,11 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-try:
-    import BAC0  # type: ignore
-except Exception:  # pragma: no cover
-    BAC0 = None
-
+import BAC0
 from sqlmodel import Session, select
 
 from .models import Device, Point
@@ -31,16 +27,13 @@ class BacnetDiscoveryService:
         self.ip = ip
         self.poll_limit = poll_limit
 
-    def scan(self, session: Session) -> dict[str, Any]:
-        if BAC0 is None:
-            raise RuntimeError("BAC0 is not installed. Install requirements first.")
-
-        bacnet = BAC0.lite(ip=self.ip)
+    async def scan(self, session: Session, target: str | None = None) -> dict[str, Any]:
+        bacnet = BAC0.start(ip=self.ip)
         discovered = []
         try:
-            devices = bacnet.discover() or []
-            for raw in devices:
-                discovered.append(self._normalize_and_store_device(bacnet, session, raw))
+            iams = await bacnet.who_is(address=target, timeout=5) if target else await bacnet.who_is(timeout=5)
+            for iam in iams or []:
+                discovered.append(await self._normalize_and_store_device(bacnet, session, iam))
             session.commit()
         finally:
             try:
@@ -50,12 +43,14 @@ class BacnetDiscoveryService:
 
         return {"devices_found": len(discovered), "devices": discovered}
 
-    def _normalize_and_store_device(self, bacnet: Any, session: Session, raw: Any) -> dict[str, Any]:
-        address = self._extract_address(raw)
-        instance = self._extract_instance(raw)
-        name = self._safe_read(bacnet, f"{address} device {instance} objectName") or f"Device {instance}"
-        vendor = self._safe_read(bacnet, f"{address} device {instance} vendorName")
-        model_name = self._safe_read(bacnet, f"{address} device {instance} modelName")
+    async def _normalize_and_store_device(self, bacnet: Any, session: Session, iam: Any) -> dict[str, Any]:
+        address = str(getattr(iam, "pduSource", "unknown"))
+        raw_identifier = str(getattr(iam, "iAmDeviceIdentifier", "device,0"))
+        instance = int(raw_identifier.split(",")[-1]) if "," in raw_identifier else None
+
+        name = await self._safe_read(bacnet, f"{address} device {instance} objectName") or f"Device {instance}"
+        vendor = await self._safe_read(bacnet, f"{address} device {instance} vendorName")
+        model_name = await self._safe_read(bacnet, f"{address} device {instance} modelName")
 
         existing = session.exec(select(Device).where(Device.address == address, Device.device_instance == instance)).first()
         device = existing or Device(address=address, device_instance=instance)
@@ -66,7 +61,7 @@ class BacnetDiscoveryService:
         session.add(device)
         session.flush()
 
-        self._sync_points(bacnet, session, device)
+        await self._sync_points(bacnet, session, device)
 
         return {
             "device_instance": instance,
@@ -76,11 +71,11 @@ class BacnetDiscoveryService:
             "model_name": device.model_name,
         }
 
-    def _sync_points(self, bacnet: Any, session: Session, device: Device) -> None:
+    async def _sync_points(self, bacnet: Any, session: Session, device: Device) -> None:
         if device.device_instance is None:
             return
 
-        object_list = self._safe_read(bacnet, f"{device.address} device {device.device_instance} objectList") or []
+        object_list = await self._safe_read(bacnet, f"{device.address} device {device.device_instance} objectList") or []
         if not isinstance(object_list, (list, tuple)):
             return
 
@@ -89,9 +84,9 @@ class BacnetDiscoveryService:
             object_type = self._object_type(obj)
             object_instance = self._object_instance(obj)
             object_identifier = f"{object_type}:{object_instance}"
-            object_name = self._safe_read(bacnet, f"{device.address} {object_type} {object_instance} objectName") or object_identifier
-            present_value = self._safe_read(bacnet, f"{device.address} {object_type} {object_instance} presentValue")
-            units = self._safe_read(bacnet, f"{device.address} {object_type} {object_instance} units")
+            object_name = await self._safe_read(bacnet, f"{device.address} {object_type} {object_instance} objectName") or object_identifier
+            present_value = await self._safe_read(bacnet, f"{device.address} {object_type} {object_instance} presentValue")
+            units = await self._safe_read(bacnet, f"{device.address} {object_type} {object_instance} units")
 
             existing = session.exec(select(Point).where(Point.device_id == device.id, Point.object_identifier == object_identifier)).first()
             point = existing or Point(device_id=device.id, object_identifier=object_identifier)
@@ -103,31 +98,11 @@ class BacnetDiscoveryService:
             session.add(point)
 
     @staticmethod
-    def _safe_read(bacnet: Any, query: str) -> Any:
+    async def _safe_read(bacnet: Any, query: str) -> Any:
         try:
-            return bacnet.read(query)
+            return await bacnet.read(query)
         except Exception:
             return None
-
-    @staticmethod
-    def _extract_address(raw: Any) -> str:
-        if isinstance(raw, dict):
-            return str(raw.get("address") or raw.get("addr") or "unknown")
-        if isinstance(raw, (list, tuple)) and raw:
-            return str(raw[0])
-        return str(raw)
-
-    @staticmethod
-    def _extract_instance(raw: Any) -> int | None:
-        if isinstance(raw, dict):
-            value = raw.get("device_instance") or raw.get("instance") or raw.get("device_id")
-            return int(value) if value is not None else None
-        if isinstance(raw, (list, tuple)) and len(raw) > 1:
-            try:
-                return int(raw[1])
-            except Exception:
-                return None
-        return None
 
     @staticmethod
     def _object_type(obj: Any) -> str:
