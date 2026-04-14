@@ -1,75 +1,74 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>IntelliCore MVP</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; background: #0b1020; color: #e8eefc; }
-      .card { background: #151d33; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #2b3557; }
-      input, button { padding: 0.6rem; border-radius: 6px; border: none; }
-      button { background: #4f7cff; color: white; cursor: pointer; }
-      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-      .message { color: #9fe870; margin-top: 0.5rem; }
-      .muted { color: #9aa8d6; }
-    </style>
-  </head>
-  <body>
+{% extends "base.html" %}
+{% block title %}IntelliCore Dashboard{% endblock %}
+
+{% block content %}
+<section class="panel">
     <h1>IntelliCore MVP</h1>
-    <p class="muted">BACnet/IP-first discovery appliance with local dashboard.</p>
+    <p class="empty">BACnet/IP and Modbus TCP discovery with local persistence and live point visibility.</p>
+    <p><a href="/points/live">Open live points page</a></p>
 
-    <div class="card">
-      <form method="post" action="/scan">
-        <label>Target BACnet IP/CIDR</label>
-        <input type="text" name="target_ip" value="{{ config.bacnet_ip }}" style="width: 260px; margin: 0 0.5rem;" />
+    <h2>BACnet Scan</h2>
+    <form method="post" action="/scan" class="scan-controls">
+        <label for="target_ip">Target BACnet IP/CIDR</label>
+        <input id="target_ip" type="text" name="target_ip" value="{{ config.bacnet_ip }}" />
         <button type="submit">Run BACnet Scan</button>
-      </form>
-      {% if message %}<div class="message">{{ message }}</div>{% endif %}
-    </div>
+    </form>
 
-    <div class="grid">
-      <div class="card">
-        <h2>Discovered Devices</h2>
-        <table>
-          <thead>
-            <tr><th>Name</th><th>Address</th><th>Vendor</th><th>Model</th></tr>
-          </thead>
-          <tbody>
+    <h2 style="margin-top: 1rem;">Modbus TCP Poll</h2>
+    <form method="post" action="/modbus/poll" class="scan-controls">
+        <input type="text" name="host" value="{{ config.modbus_host }}" placeholder="Host" />
+        <input type="number" name="port" value="{{ config.modbus_port }}" placeholder="Port" />
+        <input type="number" name="unit_id" value="{{ config.modbus_unit_id }}" placeholder="Unit ID" />
+        <input type="number" name="start_address" value="{{ config.modbus_start_address }}" placeholder="Start Address" />
+        <input type="number" name="register_count" value="{{ config.modbus_register_count }}" placeholder="Register Count" />
+        <button type="submit">Poll Modbus</button>
+    </form>
+
+    {% if message %}<div class="status-box {{ message_level or 'info' }}">{{ message }}</div>{% endif %}
+</section>
+
+<section class="panel">
+    <h2>Discovered Devices</h2>
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Address</th><th>Protocol</th><th>Vendor</th><th>Model</th><th>Details</th></tr>
+        </thead>
+        <tbody>
             {% for device in devices %}
             <tr>
-              <td>{{ device.name }}</td>
-              <td>{{ device.address }}</td>
-              <td>{{ device.vendor or '-' }}</td>
-              <td>{{ device.model_name or '-' }}</td>
+                <td>{{ device.name }}</td>
+                <td>{{ device.address }}</td>
+                <td>{{ device.protocol }}</td>
+                <td>{{ device.vendor or '-' }}</td>
+                <td>{{ device.model_name or '-' }}</td>
+                <td><a href="/devices/{{ device.id }}">View</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="4">No devices yet.</td></tr>
+            <tr><td colspan="6">No devices yet.</td></tr>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
+        </tbody>
+    </table>
+</section>
 
-      <div class="card">
-        <h2>Live Point Values</h2>
-        <table>
-          <thead>
-            <tr><th>Point</th><th>Type</th><th>Value</th><th>Units</th></tr>
-          </thead>
-          <tbody>
+<section class="panel">
+    <h2>Latest Point Values</h2>
+    <table>
+        <thead>
+            <tr><th>Point</th><th>Type</th><th>Value</th><th>Units</th><th>Last Sampled</th></tr>
+        </thead>
+        <tbody>
             {% for point in points %}
             <tr>
-              <td>{{ point.object_name }}</td>
-              <td>{{ point.object_type }}</td>
-              <td>{{ point.present_value or '-' }}</td>
-              <td>{{ point.units or '-' }}</td>
+                <td>{{ point.object_name }}</td>
+                <td>{{ point.object_type }}</td>
+                <td class="value">{{ point.present_value or '-' }}</td>
+                <td>{{ point.units or '-' }}</td>
+                <td>{{ point.last_sampled.strftime('%Y-%m-%d %H:%M:%S') if point.last_sampled else '-' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="4">No points yet.</td></tr>
+            <tr><td colspan="5">No points yet.</td></tr>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </body>
-</html>
+        </tbody>
+    </table>
+</section>
+{% endblock %}

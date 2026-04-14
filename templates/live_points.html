@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}IntelliCore - Live Points{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <a href="/">&larr; Back to Dashboard</a>
+    <h1>Live Point Values</h1>
+    <p class="empty">Auto-refreshing every {{ config.live_refresh_seconds }} seconds.</p>
+</section>
+
+<section class="panel">
+    <table id="points-table">
+        <thead>
+            <tr>
+                <th>Point</th>
+                <th>Type</th>
+                <th>Value</th>
+                <th>Units</th>
+                <th>Last Sampled</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for point in points %}
+            <tr>
+                <td>{{ point.object_name }}</td>
+                <td>{{ point.object_type }}</td>
+                <td class="value">{{ point.present_value or '-' }}</td>
+                <td>{{ point.units or '-' }}</td>
+                <td>{{ point.last_sampled.strftime('%Y-%m-%d %H:%M:%S') if point.last_sampled else '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">No points yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function refreshPoints() {
+    const response = await fetch('/api/points');
+    const points = await response.json();
+    const tbody = document.querySelector('#points-table tbody');
+    if (!points.length) {
+        tbody.innerHTML = '<tr><td colspan="5">No points yet.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = points.map((point) => `
+        <tr>
+            <td>${point.object_name}</td>
+            <td>${point.object_type}</td>
+            <td class="value">${point.present_value ?? '-'}</td>
+            <td>${point.units ?? '-'}</td>
+            <td>${point.last_sampled ? point.last_sampled.replace('T', ' ').slice(0, 19) : '-'}</td>
+        </tr>
+    `).join('');
+}
+
+setInterval(refreshPoints, {{ config.live_refresh_seconds * 1000 }});
+</script>
+{% endblock %}

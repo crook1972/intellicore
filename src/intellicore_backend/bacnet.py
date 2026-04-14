@@ -11,14 +11,23 @@ from .models import Device, Point
 
 STANDARD_VALUE_OBJECTS = {
     "analogInput",
+    "analog-input",
     "analogOutput",
+    "analog-output",
     "analogValue",
+    "analog-value",
     "binaryInput",
+    "binary-input",
     "binaryOutput",
+    "binary-output",
     "binaryValue",
+    "binary-value",
     "multiStateInput",
+    "multi-state-input",
     "multiStateOutput",
+    "multi-state-output",
     "multiStateValue",
+    "multi-state-value",
 }
 
 
@@ -30,10 +39,13 @@ class BacnetDiscoveryService:
     async def scan(self, session: Session, target: str | None = None) -> dict[str, Any]:
         bacnet = BAC0.start(ip=self.ip)
         discovered = []
+        points_synced = 0
         try:
             iams = await bacnet.who_is(address=target, timeout=5) if target else await bacnet.who_is(timeout=5)
             for iam in iams or []:
-                discovered.append(await self._normalize_and_store_device(bacnet, session, iam))
+                device_result = await self._normalize_and_store_device(bacnet, session, iam)
+                points_synced += int(device_result.pop("points_synced", 0))
+                discovered.append(device_result)
             session.commit()
         finally:
             try:
@@ -41,7 +53,7 @@ class BacnetDiscoveryService:
             except Exception:
                 pass
 
-        return {"devices_found": len(discovered), "devices": discovered}
+        return {"devices_found": len(discovered), "points_synced": points_synced, "devices": discovered}
 
     async def _normalize_and_store_device(self, bacnet: Any, session: Session, iam: Any) -> dict[str, Any]:
         address = str(getattr(iam, "pduSource", "unknown"))
@@ -52,7 +64,10 @@ class BacnetDiscoveryService:
         vendor = await self._safe_read(bacnet, f"{address} device {instance} vendorName")
         model_name = await self._safe_read(bacnet, f"{address} device {instance} modelName")
 
-        existing = session.exec(select(Device).where(Device.address == address, Device.device_instance == instance)).first()
+        matches = session.exec(
+            select(Device).where(Device.address == address, Device.protocol == "bacnet").order_by(Device.last_seen.desc())
+        ).all()
+        existing = matches[0] if matches else None
         device = existing or Device(address=address, device_instance=instance)
         device.name = str(name)
         device.vendor = str(vendor) if vendor is not None else None
@@ -61,7 +76,14 @@ class BacnetDiscoveryService:
         session.add(device)
         session.flush()
 
-        await self._sync_points(bacnet, session, device)
+        for duplicate in matches[1:]:
+            duplicate_points = session.exec(select(Point).where(Point.device_id == duplicate.id)).all()
+            for point in duplicate_points:
+                point.device_id = device.id
+                session.add(point)
+            session.delete(duplicate)
+
+        points_synced = await self._sync_points(bacnet, session, device)
 
         return {
             "device_instance": instance,
@@ -69,17 +91,19 @@ class BacnetDiscoveryService:
             "name": device.name,
             "vendor": device.vendor,
             "model_name": device.model_name,
+            "points_synced": points_synced,
         }
 
-    async def _sync_points(self, bacnet: Any, session: Session, device: Device) -> None:
+    async def _sync_points(self, bacnet: Any, session: Session, device: Device) -> int:
         if device.device_instance is None:
-            return
+            return 0
 
         object_list = await self._safe_read(bacnet, f"{device.address} device {device.device_instance} objectList") or []
         if not isinstance(object_list, (list, tuple)):
-            return
+            return 0
 
         value_objects = [obj for obj in object_list if self._object_type(obj) in STANDARD_VALUE_OBJECTS][: self.poll_limit]
+        synced = 0
         for obj in value_objects:
             object_type = self._object_type(obj)
             object_instance = self._object_instance(obj)
@@ -96,6 +120,9 @@ class BacnetDiscoveryService:
             point.units = None if units is None else str(units)
             point.last_sampled = datetime.utcnow()
             session.add(point)
+            synced += 1
+
+        return synced
 
     @staticmethod
     async def _safe_read(bacnet: Any, query: str) -> Any:
